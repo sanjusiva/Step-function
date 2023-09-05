@@ -1,3 +1,5 @@
+const knex = require('knex');
+
 exports.handler = async (event) => {
   try {
     // Your logic here
@@ -10,6 +12,7 @@ exports.handler = async (event) => {
     return {
       statusCode:200,
       resultFromFirstLambda: result,
+      layerResult:knex.greet(event.inputData)
     };
   } catch (e) {
     console.log(e);

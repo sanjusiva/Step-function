@@ -11,7 +11,7 @@
       "InvokeSecondLambda": {
         "Type": "Task",
         "Resource": "${SecondLambdaFunctionArn}",
-        "InputPath": "$.output.resultFromFirstLambda",
+        "InputPath": "$.output",
         "End": true
       }
     }

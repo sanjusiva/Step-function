@@ -27,7 +27,7 @@ Resources:
                 requestParameters:
                   Input: $request.body
                   StateMachineArn:
-                    Ref: InvokeStateMachine
+                    Ref: InvokeLayerStateMachine
                 payloadFormatVersion: '1.0'
                 type: aws_proxy
                 connectionType: INTERNET
@@ -42,7 +42,15 @@ Resources:
           allowOrigins:
           - '*'
         x-amazon-apigateway-importexport-version: '1.0'
-  InvokeStateMachine:
+  KnexLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: SAM-Layers-stepFunction
+      Description: Layer that will be shared across multiple microservices
+      ContentUri: ../../layers
+      CompatibleRuntimes:
+      - nodejs14.x
+  InvokeLayerStateMachine:
     Type: AWS::Serverless::StateMachine
     Properties:
       Type: EXPRESS
@@ -79,6 +87,8 @@ Resources:
       CodeUri: FirstLambdaFunction
       Handler: index.handler
       Runtime: nodejs14.x
+    Layers:
+    - arn:aws:lambda:us-east-1:563264128488:layer:SAM-Layers-stepFunction:2
     Metadata:
       SamResourceId: FirstLambdaFunction
   SecondLambdaFunction:
@@ -109,7 +119,7 @@ Resources:
           - Effect: Allow
             Action: states:StartSyncExecution
             Resource:
-              Ref: InvokeStateMachine
+              Ref: InvokeLayerStateMachine
 Outputs:
   MyApiGateway:
     Description: API Gateway endpoint URL

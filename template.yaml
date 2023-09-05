@@ -135,7 +135,7 @@ Resources:
                   Fn::GetAtt: [HttpApiRole, Arn]
                 requestParameters:
                   Input: "$request.body"
-                  StateMachineArn: !Ref InvokeStateMachine
+                  StateMachineArn: !Ref InvokeLayerStateMachine
                 payloadFormatVersion: "1.0"
                 type: "aws_proxy"
                 connectionType: "INTERNET"
@@ -150,32 +150,20 @@ Resources:
           allowOrigins:
           - "*"
         x-amazon-apigateway-importexport-version: "1.0"
+  KnexLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: SAM-Layers-stepFunction
+      Description: Layer that will be shared across multiple microservices
+      ContentUri: ./layers
+      CompatibleRuntimes:
+        - nodejs14.x
 
-  InvokeStateMachine:
+  InvokeLayerStateMachine:
     Type: AWS::Serverless::StateMachine
     Properties:
       Type: EXPRESS
       DefinitionUri: invoke.asl.json
-      # DefinitionString:
-      #   Fn::Sub: |
-      #     {
-      #       "Comment": "A Step Function with Two Lambdas",
-      #       "StartAt": "InvokeFirstLambda",
-      #       "States": {
-      #         "InvokeFirstLambda": {
-      #           "Type": "Task",
-      #           "Resource": "${FirstLambdaFunction.Arn}",
-      #           "ResultPath": "$.output"
-      #           "Next": "InvokeSecondLambda",
-      #         },
-      #         "InvokeSecondLambda": {
-      #           "Type": "Task",
-      #           "Resource": "${SecondLambdaFunction.Arn}",
-      #           "InputPath": "$.output.resultFromFirstLambda",
-      #           "End": true
-      #         }
-      #       }
-      #     }
       DefinitionSubstitutions:
         FirstLambdaFunctionArn: !GetAtt FirstLambdaFunction.Arn
         SecondLambdaFunctionArn: !GetAtt SecondLambdaFunction.Arn
@@ -198,6 +186,8 @@ Resources:
       CodeUri: ./first_lambda
       Handler: index.handler
       Runtime: nodejs14.x
+    Layers:
+      - arn:aws:lambda:us-east-1:563264128488:layer:SAM-Layers-stepFunction:2
 
   SecondLambdaFunction:
     Type: "AWS::Serverless::Function"
@@ -225,7 +215,7 @@ Resources:
           Statement:
             - Effect: Allow
               Action: "states:StartSyncExecution"
-              Resource: !Ref InvokeStateMachine
+              Resource: !Ref InvokeLayerStateMachine
 
 Outputs:
   MyApiGateway:
