@@ -1,0 +1,233 @@
+# AWSTemplateFormatVersion: "2010-09-09"
+# Transform: "AWS::Serverless-2016-10-31"
+
+# Resources:
+#   FirstLambdaFunction:
+#     Type: "AWS::Serverless::Function"
+#     Properties:
+#       CodeUri: ./first_lambda
+#       Handler: index.handler
+#       Runtime: nodejs16.x
+
+#   SecondLambdaFunction:
+#     Type: "AWS::Serverless::Function"
+#     Properties:
+#       CodeUri: ./second_lambda
+#       Handler: index.handler
+#       Runtime: nodejs16.x
+
+#   MyStateMachine:
+#     Type: "AWS::StepFunctions::StateMachine"
+#     Properties:
+#       DefinitionString:
+#         Fn::Sub: |
+#           {
+#             "Comment": "A Step Function with Two Lambdas",
+#             "StartAt": "InvokeFirstLambda",
+#             "States": {
+#               "InvokeFirstLambda": {
+#                 "Type": "Task",
+#                 "Resource": "${FirstLambdaFunction.Arn}",
+#                 "Next": "InvokeSecondLambda"
+#               },
+#               "InvokeSecondLambda": {
+#                 "Type": "Task",
+#                 "Resource": "${SecondLambdaFunction.Arn}",
+#                 "End": true
+#               }
+#             }
+#           }
+#       RoleArn: !GetAtt MyStateMachineRole.Arn
+
+#   MyStateMachineRole:
+#     Type: "AWS::IAM::Role"
+#     Properties:
+#       AssumeRolePolicyDocument:
+#         Version: "2012-10-17"
+#         Statement:
+#           - Effect: Allow
+#             Principal:
+#               Service: states.amazonaws.com
+#             Action: sts:AssumeRole
+#       Policies:
+#         - PolicyName: StepFunctionExecution
+#           PolicyDocument:
+#             Version: "2012-10-17"
+#             Statement:
+#               - Effect: Allow
+#                 Action:
+#                   - lambda:InvokeFunction
+#                 Resource: "*"
+
+#   MyApiGateway:
+#     Type: "AWS::Serverless::Api"
+#     Properties:
+#       StageName: Prod
+#       DefinitionBody:
+#         swagger: "2.0"
+#         info:
+#           title: "My API Gateway"
+#         paths:
+#           /invoke-step-function:
+#             post:
+#               consumes:
+#                 - application/json
+#               produces:
+#                 - application/json
+#               x-amazon-apigateway-integration:
+#                 type: aws
+#                 uri: arn:aws:apigateway:${AWS::Region}:states:action/StartExecution
+#                 credentials: arn:aws:iam::563264128488:role/APIGatewayToStepFunctionsRole
+#                 # arn:aws:iam::${AWS::AccountId}:role/MyStateMachineRole
+#                 httpMethod: POST
+#                 passthroughBehavior: when_no_match
+#                 requestTemplates:
+#                   application/json: '{"input": "$util.escapeJavaScript($input.body)"}'
+#                 responses:
+#                   default:
+#                     statusCode: "200"
+#                 responseParameters:
+#                   method.response.header.Access-Control-Allow-Origin: "'*'"
+#               responses:
+#                 # Handle 400 Bad Request error
+#                 "400":
+#                   description: "Bad Request"
+#                   responseParameters:
+#                     method.response.header.Access-Control-Allow-Origin: "'*'"
+#                 # Handle 500 Internal Server Error
+#                 "500":
+#                   description: "Internal Server Error"
+#                   responseParameters:
+#                     method.response.header.Access-Control-Allow-Origin: "'*'"
+
+# Outputs:
+#   ApiUrl:
+#     Description: URL of the API Gateway endpoint is here
+#     Value: !Sub "https://${MyApiGateway}.execute-api.${AWS::Region}.amazonaws.com/Prod"
+
+
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+  
+Resources:
+
+  SAMLogs:  
+    Type: AWS::Logs::LogGroup
+
+  MyApiGateway:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      FailOnWarnings: True
+      DefinitionBody:
+        info:
+          version: '1.0'
+          title:
+            Ref: AWS::StackName
+        paths:
+          "/invoke":
+            post:
+              responses: 
+                default:
+                  description: "Default response for POST /"
+              x-amazon-apigateway-integration:
+                integrationSubtype: "StepFunctions-StartSyncExecution"
+                credentials:
+                  Fn::GetAtt: [HttpApiRole, Arn]
+                requestParameters:
+                  Input: "$request.body"
+                  StateMachineArn: !Ref InvokeStateMachine
+                payloadFormatVersion: "1.0"
+                type: "aws_proxy"
+                connectionType: "INTERNET"
+        openapi: 3.0.1
+        x-amazon-apigateway-cors:
+          allowMethods:
+            - "POST"
+          allowHeaders:
+            - "content-type"
+          maxAge: 0
+          allowCredentials: false
+          allowOrigins:
+          - "*"
+        x-amazon-apigateway-importexport-version: "1.0"
+
+  InvokeStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Type: EXPRESS
+      DefinitionUri: invoke.asl.json
+      # DefinitionString:
+      #   Fn::Sub: |
+      #     {
+      #       "Comment": "A Step Function with Two Lambdas",
+      #       "StartAt": "InvokeFirstLambda",
+      #       "States": {
+      #         "InvokeFirstLambda": {
+      #           "Type": "Task",
+      #           "Resource": "${FirstLambdaFunction.Arn}",
+      #           "ResultPath": "$.output"
+      #           "Next": "InvokeSecondLambda",
+      #         },
+      #         "InvokeSecondLambda": {
+      #           "Type": "Task",
+      #           "Resource": "${SecondLambdaFunction.Arn}",
+      #           "InputPath": "$.output.resultFromFirstLambda",
+      #           "End": true
+      #         }
+      #       }
+      #     }
+      DefinitionSubstitutions:
+        FirstLambdaFunctionArn: !GetAtt FirstLambdaFunction.Arn
+        SecondLambdaFunctionArn: !GetAtt SecondLambdaFunction.Arn
+      Logging:
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt SAMLogs.Arn
+        IncludeExecutionData: true
+        Level: ALL
+      Policies:
+        - LambdaInvokePolicy:
+            FunctionName: !Ref FirstLambdaFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref SecondLambdaFunction
+        - CloudWatchLogsFullAccess
+  
+  FirstLambdaFunction:
+    Type: "AWS::Serverless::Function"
+    Properties:
+      CodeUri: ./first_lambda
+      Handler: index.handler
+      Runtime: nodejs14.x
+
+  SecondLambdaFunction:
+    Type: "AWS::Serverless::Function"
+    Properties:
+      CodeUri: ./second_lambda
+      Handler: index.handler
+      Runtime: nodejs14.x
+  
+  HttpApiRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - apigateway.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Policies:
+      - PolicyName: AllowSFNExec
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+            - Effect: Allow
+              Action: "states:StartSyncExecution"
+              Resource: !Ref InvokeStateMachine
+
+Outputs:
+  MyApiGateway:
+    Description: "API Gateway endpoint URL"
+    Value: !Sub "https://${MyApiGateway}.execute-api.${AWS::Region}.amazonaws.com/invoke"

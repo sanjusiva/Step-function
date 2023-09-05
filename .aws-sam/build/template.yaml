@@ -1,0 +1,117 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Resources:
+  SAMLogs:
+    Type: AWS::Logs::LogGroup
+  MyApiGateway:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      FailOnWarnings: true
+      DefinitionBody:
+        info:
+          version: '1.0'
+          title:
+            Ref: AWS::StackName
+        paths:
+          /invoke:
+            post:
+              responses:
+                default:
+                  description: Default response for POST /
+              x-amazon-apigateway-integration:
+                integrationSubtype: StepFunctions-StartSyncExecution
+                credentials:
+                  Fn::GetAtt:
+                  - HttpApiRole
+                  - Arn
+                requestParameters:
+                  Input: $request.body
+                  StateMachineArn:
+                    Ref: InvokeStateMachine
+                payloadFormatVersion: '1.0'
+                type: aws_proxy
+                connectionType: INTERNET
+        openapi: 3.0.1
+        x-amazon-apigateway-cors:
+          allowMethods:
+          - POST
+          allowHeaders:
+          - content-type
+          maxAge: 0
+          allowCredentials: false
+          allowOrigins:
+          - '*'
+        x-amazon-apigateway-importexport-version: '1.0'
+  InvokeStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Type: EXPRESS
+      DefinitionUri: ../../invoke.asl.json
+      DefinitionSubstitutions:
+        FirstLambdaFunctionArn:
+          Fn::GetAtt:
+          - FirstLambdaFunction
+          - Arn
+        SecondLambdaFunctionArn:
+          Fn::GetAtt:
+          - SecondLambdaFunction
+          - Arn
+      Logging:
+        Destinations:
+        - CloudWatchLogsLogGroup:
+            LogGroupArn:
+              Fn::GetAtt:
+              - SAMLogs
+              - Arn
+        IncludeExecutionData: true
+        Level: ALL
+      Policies:
+      - LambdaInvokePolicy:
+          FunctionName:
+            Ref: FirstLambdaFunction
+      - LambdaInvokePolicy:
+          FunctionName:
+            Ref: SecondLambdaFunction
+      - CloudWatchLogsFullAccess
+  FirstLambdaFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: FirstLambdaFunction
+      Handler: index.handler
+      Runtime: nodejs14.x
+    Metadata:
+      SamResourceId: FirstLambdaFunction
+  SecondLambdaFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: SecondLambdaFunction
+      Handler: index.handler
+      Runtime: nodejs14.x
+    Metadata:
+      SamResourceId: SecondLambdaFunction
+  HttpApiRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - apigateway.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Policies:
+      - PolicyName: AllowSFNExec
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action: states:StartSyncExecution
+            Resource:
+              Ref: InvokeStateMachine
+Outputs:
+  MyApiGateway:
+    Description: API Gateway endpoint URL
+    Value:
+      Fn::Sub: https://${MyApiGateway}.execute-api.${AWS::Region}.amazonaws.com/invoke

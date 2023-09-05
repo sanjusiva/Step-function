@@ -1,0 +1,18 @@
+{
+    "Comment": "A state machine that invoke step function.",
+    "StartAt": "InvokeFirstLambda",
+    "States": {
+      "InvokeFirstLambda": {
+        "Type": "Task",
+        "Resource": "${FirstLambdaFunctionArn}",
+        "ResultPath": "$.output",
+        "Next": "InvokeSecondLambda"
+      },
+      "InvokeSecondLambda": {
+        "Type": "Task",
+        "Resource": "${SecondLambdaFunctionArn}",
+        "InputPath": "$.output.resultFromFirstLambda",
+        "End": true
+      }
+    }
+  }

@@ -1,0 +1,51 @@
+{
+    "Comment": "A state machine that invke step function.",
+    "StartAt": "Create Excel",
+    "States": {
+      "Create Excel": {
+        "Type": "Choice",
+        "Choices":[
+            {
+                "Variable": "$.data.upload",
+                "BooleanEquals": true,
+                "Next": "Upload S3"
+            },
+            {
+                "Variable": "$.data.upload",
+                "BooleanEquals": false,
+                "Next": "Return Buffer"
+            }
+        ],
+        "Default": "Creation Failure"
+      },
+      "Upload S3": {
+        "Type": "Task",
+        "Resource": "${UploadS3FunctionArn}",
+        "ResultPath": "$.data",
+        "InputPath": "$.data",
+        "Next": "Table insert"
+      },
+      "Table insert": {
+        "Type": "Task",
+        "Resource": "${TableInsertFunctionArn}",
+        "Next": "Email trigger",
+        "ResultPath": "$.data",
+        "InputPath": "$.data"
+      },
+      "Creation Failure": {
+        "Type": "Fail",
+        "Cause": "Create Excel process failed"
+      },
+      "Return Buffer": {
+        "Type": "Succeed"
+
+      },
+      "Email trigger": {
+        "Type": "Task",
+        "Resource": "${EmailTriggerFunctionArn}",
+        "End": true,
+        "ResultPath": "$.data",
+        "InputPath": "$.data"
+      }
+    }
+}
